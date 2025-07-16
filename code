@@ -1,0 +1,222 @@
+##clinker
+clinker -p --dont_set_origin
+
+##IGUA
+igua --clustering-method complete --clustering-distance 0.5
+
+##ANIclustermap
+ANIclustermap -i -t 3  -o  --annotation
+
+##clustal
+clustalo --infile --threads 2 --outfmt clustal --resno --outfile --pileup  --seqtype 
+
+##GECCO
+gecco run --genome  --cds-feature CDS -o
+
+##iqtree
+iqtree -s core_gene_alignment_filtered.aln  -m GTR+F+R2 -B 1000 -T 16
+
+##panaroo
+eval "$(conda shell.bash hook)"
+conda activate "panaroo"
+panaroo -i -o --clean-mode strict --remove-invalid-genes --core_threshold 0.95 -t 10 -a core
+
+##diamond
+pip install numpy
+pip install rich
+pip install pandas
+pip install gb-io
+eval "$(conda shell.bash hook)"
+conda activate diamond
+python aci.py -q -t mibig.gbk -o
+
+###aci.py
+import argparse
+import dataclasses
+import io
+import itertools
+import os
+import tempfile
+import subprocess
+import multiprocessing.pool
+import typing
+
+import gb_io
+import numpy
+import rich.panel
+import rich.progress
+import pandas
+
+# sys.path.insert(0, os.path.abspath(os.path.join(__file__, "..", "..", "..", "..")))
+# import chamois.orf
+# from chamois.model import ClusterSequence
+# from chamois.cli._common import find_proteins
+
+@dataclasses.dataclass
+class Cluster:
+    record: gb_io.Record
+
+@dataclasses.dataclass
+class Protein:
+    id: str
+    sequence: str
+    cluster: Cluster
+
+def extract_proteins(cluster: Cluster) -> typing.Iterator[Protein]:
+    i = 1
+    for feature in cluster.record.features:
+        if feature.kind == "CDS":
+            qualifiers = {q.key:q.value for q in feature.qualifiers}
+            try:
+                yield Protein(f"{cluster.record.name}_{i}", qualifiers["translation"], cluster)
+                i += 1
+            except KeyError:
+                pass
+
+
+parser = argparse.ArgumentParser()
+parser.add_argument("-q", "--query", required=True)
+parser.add_argument("-t", "--target", required=True)
+parser.add_argument("-o", "--output", required=True)
+parser.add_argument("-j", "--jobs", type=int)
+args = parser.parse_args()
+
+# run many-to-many comparison
+with tempfile.TemporaryDirectory() as dst:
+
+    with rich.progress.Progress() as progress:
+        # load query records
+        with progress.open(args.query, "r", description=f"[bold blue]{'Loading':>12}[/] queries") as src:
+            query_records = {record.name: Cluster(record) for record in gb_io.iter(src)}
+            query_ids = sorted(query_records)
+            query_indices = {name:i for i, name in enumerate(query_ids)}
+        # load target records
+        with progress.open(args.target, "r", description=f"[bold blue]{'Loading':>12}[/] targets") as src:
+            target_records = {record.name:Cluster(record) for record in gb_io.iter(src)}
+            target_ids = sorted(target_records)
+            target_indices = {name:i for i, name in enumerate(target_ids)}
+
+        # find genes
+        progress.console.print(f"[bold blue]{'Finding':>12}[/] genes in input records")
+        with multiprocessing.pool.ThreadPool(args.jobs) as pool:
+            query_genes = [gene for genes in progress.track(pool.imap(extract_proteins, query_records.values()), total=len(query_records), description=f"[bold blue]{'Processing':>12}[/] queries") for gene in genes]
+            target_genes = [gene for genes in progress.track(pool.imap(extract_proteins, target_records.values()), total=len(target_records), description=f"[bold blue]{'Processing':>12}[/] targets") for gene in genes]
+
+        # write target genes
+        db_faa = os.path.join(dst, "db.faa")
+        with open(db_faa, "w") as f:
+            for protein in progress.track(target_genes, description=f"[bold blue]{'Writing':>12}[/] targets"):
+                f.write(f">{protein.id}\n")
+                f.write(f"{protein.sequence.rstrip('*')}\n")
+
+    # make blastd
+    rich.print(f"[bold blue]{'Making':>12}[/] BLASTp database")
+    db_filename = os.path.join(dst, "db.db")
+    proc = subprocess.run([
+        "diamond",
+        "makedb",
+        "--in",
+        db_faa,
+        "--db",
+        db_filename,
+        "--tmpdir",
+        dst,
+        "--threads",
+        str(args.jobs or os.cpu_count())
+    ], capture_output=True)
+    if proc.returncode != 0:
+        rich.print(rich.panel.Panel(proc.stderr.decode()))
+    proc.check_returncode()
+
+    # write query records
+    query_filename = os.path.join(dst, "query.faa")
+    with open(query_filename, "w") as f:
+        for protein in progress.track(query_genes, description=f"[bold blue]{'Writing':>12}[/] queries"):
+            f.write(f">{protein.id}\n")
+            f.write(f"{protein.sequence.rstrip('*')}\n")
+
+    # run BLASTn
+    rich.print(f"[bold blue]{'Running':>12}[/] BLASTp with DIAMOND")
+    proc = subprocess.run([
+        "diamond",
+        "blastp",
+        "--query",
+        query_filename,
+        "--db",
+        db_filename,
+        "--threads",
+        str(args.jobs or os.cpu_count()),
+        "--outfmt",
+        "6",
+        "--max-target-seqs",
+        str(len(target_ids)),
+        "--tmpdir",
+        dst,
+    ], capture_output=True)
+    if proc.returncode != 0:
+        rich.print(rich.panel.Panel(proc.stderr.decode()))
+    proc.check_returncode()
+
+    hits = pandas.read_table(
+        io.BytesIO(proc.stdout),
+        comment="#",
+        header=None,
+        index_col=None,
+        names=[
+            "query_protein",
+            "target_protein",
+            "identity",
+            "alilen",
+            "mismatches",
+            "gapopens",
+            "qstart",
+            "qend",
+            "sstart",
+            "send",
+            "evalue",
+            "bitscore"
+        ]
+    )
+    hits["query_cluster"] = hits["query_protein"].str.rsplit("_", n=1).str[0]
+    hits["target_cluster"] = hits["target_protein"].str.rsplit("_", n=1).str[0]
+    hits["query_index"] = hits["query_cluster"].map(query_indices.__getitem__)
+    hits["target_index"] = hits["target_cluster"].map(target_indices.__getitem__)
+
+    # only keep one hit per query protein per target cluster
+    hits = (
+        hits
+            .sort_values(["query_protein", "bitscore"])
+            .drop_duplicates(["query_protein", "target_cluster"], keep="last")
+    )
+
+    # compute identity
+    identity = numpy.zeros((len(query_records), len(target_records)), dtype=numpy.float_)
+    for row in hits.itertuples():
+        identity[row.query_index, row.target_index] += row.identity * row.alilen / 100.0
+
+    # normalize by query length
+    for i, query_id in enumerate(query_ids):
+        query_length = sum(
+            len(protein.sequence)
+            for protein in query_genes
+            if protein.cluster.record.name == query_id
+        )
+        if query_length > 0:
+            identity[i] /= query_length
+
+    # make distances symmetric
+    identity = numpy.clip(identity, 0, 1)
+    rows = []
+    for i, query_id in enumerate(query_ids):
+        target_indices = numpy.argsort(identity[i])[-3:]
+        for j in reversed(target_indices):
+            rows.append({"query_cluster": query_id, "target_cluster": target_ids[j], "weighted_identity": identity[i, j]})
+
+
+##jackHMMER
+jackhmmer -A --tblout --chkhmm  --domtblout   input.txt uniprot_trembl.fasta
+
+##hmmsearch
+hmmsearch -A   --cpu 5 --tblout  --domtblout  profile-5.hmm input.faa
+
+
