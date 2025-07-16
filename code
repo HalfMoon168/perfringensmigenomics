@@ -5,21 +5,25 @@ clinker -p --dont_set_origin
 igua --clustering-method complete --clustering-distance 0.5
 
 ##ANIclustermap
-ANIclustermap -i -t 3  -o  --annotation
+ANIclustermap -i path/to/plasmids_fna -t 3  -o plasmids_ani --annotation
 
 ##clustal
-clustalo --infile --threads 2 --outfmt clustal --resno --outfile --pileup  --seqtype 
+clustalo --infile path/toxin_sequences_fasta --threads 2 --outfmt clustal --resno --outfile --pileup  --seqtype DNA
 
 ##GECCO
-gecco run --genome  --cds-feature CDS -o
+gecco run --genome concataned_gbk_file.txt --cds-feature CDS -o
 
-##iqtree
-iqtree -s core_gene_alignment_filtered.aln  -m GTR+F+R2 -B 1000 -T 16
-
-##panaroo
+##panaroo and iqtree
 eval "$(conda shell.bash hook)"
 conda activate "panaroo"
 panaroo -i -o --clean-mode strict --remove-invalid-genes --core_threshold 0.95 -t 10 -a core
+iqtree -s core_gene_alignment_filtered.aln  -m GTR+F+R2 -B 1000 -T 16
+
+##jackHMMER
+jackhmmer -A --tblout --chkhmm  --domtblout   input.txt uniprot_trembl.fasta
+
+##hmmsearch
+hmmsearch -A   --cpu 5 --tblout  --domtblout  profile-5.hmm input.faa
 
 ##diamond
 pip install numpy
@@ -28,7 +32,7 @@ pip install pandas
 pip install gb-io
 eval "$(conda shell.bash hook)"
 conda activate diamond
-python aci.py -q -t mibig.gbk -o
+python aci.py -q path/to/concatenated_GECCO_output -t mibig.gbk -o
 
 ###aci.py
 import argparse
@@ -212,12 +216,6 @@ with tempfile.TemporaryDirectory() as dst:
         for j in reversed(target_indices):
             rows.append({"query_cluster": query_id, "target_cluster": target_ids[j], "weighted_identity": identity[i, j]})
 
-
-##jackHMMER
-jackhmmer -A --tblout --chkhmm  --domtblout   input.txt uniprot_trembl.fasta
-
-##hmmsearch
-hmmsearch -A   --cpu 5 --tblout  --domtblout  profile-5.hmm input.faa
 
 ##Figures
 ##Figure 1B
@@ -498,9 +496,9 @@ Supplementary_table$Category <- factor(Supplementary_table$Category, levels = or
 summary_stats <- Supplementary_table %>%
     group_by(Category) %>%
     summarize(
-        Q2 = quantile(Size_kb, 0.25),
-        Median = median(Size_kb),
-        Q3 = quantile(Size_kb, 0.75)
+        Q2 = quantile(Size, 0.25),
+        Median = median(Size),
+        Q3 = quantile(Size, 0.75)
     ) %>%
     arrange(factor(Category, levels = ordered_categories))
 
@@ -521,7 +519,7 @@ custom_colors <- c(
 )
 
 # Plot
-p <- ggplot(Supplementary_table, aes(x = Category, y = Size_kb, fill = Category)) +
+p <- ggplot(Supplementary_table, aes(x = Category, y = Size, fill = Category)) +
     geom_violin(trim = FALSE, width = 1, scale = "width", color = "black", alpha = 1) +
     geom_jitter(width = 0.3, color = "black", size = 0.7, alpha = 0.7) +
     geom_errorbar(
