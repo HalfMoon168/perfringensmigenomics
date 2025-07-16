@@ -219,4 +219,349 @@ jackhmmer -A --tblout --chkhmm  --domtblout   input.txt uniprot_trembl.fasta
 ##hmmsearch
 hmmsearch -A   --cpu 5 --tblout  --domtblout  profile-5.hmm input.faa
 
+##Figures
+##Figure 1B
+# Load required packages
+library(readr)
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+library(progress)
+library(patchwork)
+library(minpack.lm)
+
+# === Step 1: Load gene presence/absence matrix ===
+gpa <- read_csv("path/to/panaroo/gene_presence_absence.csv")
+presence_data <- gpa[, 4:ncol(gpa)]
+presence_matrix <- presence_data != ""
+n_genomes <- ncol(presence_matrix)
+n_reps <- 30
+
+# === Step 2: Initialize matrices for rarefaction ===
+pan_matrix <- matrix(0, nrow = n_reps, ncol = n_genomes)
+core_matrix <- matrix(0, nrow = n_reps, ncol = n_genomes)
+pb <- progress_bar$new(format = "  Rarefying [:bar] :percent ETA: :eta", total = n_reps)
+
+# === Step 3: Rarefaction replicates ===
+set.seed(42)
+for (rep in 1:n_reps) {
+  genome_order <- sample(colnames(presence_matrix))
+  for (i in 1:n_genomes) {
+    subset_matrix <- presence_matrix[, genome_order[1:i], drop = FALSE]
+    gene_counts <- rowSums(subset_matrix, na.rm = TRUE)
+    pan_matrix[rep, i] <- sum(gene_counts >= 1)
+    core_matrix[rep, i] <- sum(gene_counts == i)
+  }
+  pb$tick()
+}
+
+# === Step 4: Summarize results ===
+pan_mean <- colMeans(pan_matrix)
+pan_sd <- apply(pan_matrix, 2, sd)
+core_mean <- colMeans(core_matrix)
+core_sd <- apply(core_matrix, 2, sd)
+
+# === Step 5: New gene discovery ===
+new_gene_matrix <- pan_matrix
+for (i in 2:ncol(pan_matrix)) {
+  new_gene_matrix[, i] <- pan_matrix[, i] - pan_matrix[, i - 1]
+}
+new_gene_matrix[, 1] <- pan_matrix[, 1]
+new_gene_mean <- colMeans(new_gene_matrix)
+new_gene_sd <- apply(new_gene_matrix, 2, sd)
+
+# === Step 6: Build combined data frame for plotting ===
+plot_df <- data.frame(
+  NumGenomes = 1:n_genomes,
+  PanMean = pan_mean,
+  PanSD = pan_sd,
+  CoreMean = core_mean,
+  CoreSD = core_sd,
+  NewGenesMean = new_gene_mean,
+  NewGenesSD = new_gene_sd
+)
+
+# === Step 7: Prepare data for plotting with consistent aesthetics ===
+long_df <- plot_df %>%
+  select(NumGenomes, PanMean, CoreMean) %>%
+  rename(Pan_genome = PanMean, Core_genome = CoreMean) %>%
+  pivot_longer(cols = c(Pan_genome, Core_genome),
+               names_to = "Category", values_to = "Genes")
+
+long_sd <- plot_df %>%
+  select(NumGenomes, PanSD, CoreSD) %>%
+  rename(Pan_genome = PanSD, Core_genome = CoreSD) %>%
+  pivot_longer(cols = c(Pan_genome, Core_genome),
+               names_to = "Category", values_to = "SD")
+
+long_df <- left_join(long_df, long_sd, by = c("NumGenomes", "Category"))
+
+# === Step 8: Fit Heaps' Law model ===
+heaps_model <- nlsLM(PanMean ~ k * NumGenomes^alpha,
+                     data = plot_df,
+                     start = list(k = 1000, alpha = 0.5))
+alpha_val <- round(coef(heaps_model)["alpha"], 3)
+
+# === Step 9: Plot p1 — Rarefied pan/core genome curves ===
+p1 <- ggplot(long_df, aes(x = NumGenomes, y = Genes, color = Category, fill = Category)) +
+  geom_ribbon(aes(ymin = Genes - SD, ymax = Genes + SD), alpha = 0.3, color = NA) +
+  geom_line(size = 1.2) +
+  scale_color_manual(
+    values = c("Pan_genome" = "darkorange", "Core_genome" = "seagreen"),
+    labels = c("Pan-genome", "Core genome"),
+    breaks = c("Pan_genome", "Core_genome")
+  ) +
+  scale_fill_manual(
+    values = c("Pan_genome" = "darkorange", "Core_genome" = "seagreen"),
+    labels = c("Pan-genome", "Core genome"),
+    breaks = c("Pan_genome", "Core_genome")
+  ) +
+  scale_x_continuous(
+    limits = c(0, max(plot_df$NumGenomes)),
+    breaks = seq(0, max(plot_df$NumGenomes), by = 100)
+  ) +
+  labs(
+    title = "Rarefied Pan and Core Genome Curve",
+    x = "Number of genomes",
+    y = "Number of genes",
+    color = "Category",
+    fill = "Category"
+  ) +
+  theme_minimal(base_size = 14) +
+  theme(
+    legend.position = "top",
+    legend.key.size = unit(0.8, "lines")
+  )
+
+# === Step 10: Plot p3 — New genes per genome ===
+p3 <- ggplot(plot_df, aes(x = NumGenomes, y = NewGenesMean)) +
+  geom_line(color = "blue", size = 1.2, alpha = 0.6) +
+  geom_ribbon(aes(ymin = NewGenesMean - NewGenesSD,
+                  ymax = NewGenesMean + NewGenesSD),
+              fill = "blue", alpha = 0.2) +
+  scale_x_continuous(
+    limits = c(0, max(plot_df$NumGenomes)),
+    breaks = seq(0, max(plot_df$NumGenomes), by = 100)
+  ) +
+  labs(
+    title = "Empirical New Gene Discovery",
+    subtitle = paste0("Fitted Heaps’ α = ", alpha_val),
+    x = "Number of genomes",
+    y = "New genes per genome"
+  ) +
+  theme_minimal(base_size = 14) +
+  theme(legend.position = "none")
+
+# === Step 11: Combine and export ===
+final_plot <- p1 + p3 + plot_layout(widths = c(1, 1))
+final_plot
+
+##Figure 1C
+# Load libraries
+library(dplyr)
+library(ggplot2)
+library(ggpubr)
+
+# Step 1: Process input data
+# Assuming Supplementary_table is already loaded
+Supplementary_table <- Supplementary_table %>%
+  mutate(
+    # Recode assembly status
+    assembly_status = case_when(
+      Level %in% c("Complete", "Chromosome") ~ "Complete",
+      Level %in% c("Contig", "Scaffold") ~ "Draft",
+      TRUE ~ NA_character_
+    ),
+    # Recode source
+    source = case_when(
+      Own == "Yes" ~ "New sequences",
+      Own == "No" ~ "Public sequences",
+      TRUE ~ NA_character_
+    ),
+    # Create combined group label for x-axis
+    group = paste(source, assembly_status, sep = ": ")
+  ) %>%
+  filter(!is.na(assembly_status), !is.na(source), !is.na(Size))
+
+# Step 2: Define comparisons
+comparisons <- list(
+  c("New sequences: Draft", "New sequences: Complete"),
+  c("Public sequences: Draft", "Public sequences: Complete"),
+  c("New sequences: Draft", "Public sequences: Draft"),
+  c("New sequences: Complete", "Public sequences: Complete")
+)
+
+# Step 3: Final plot
+ggplot(Supplementary_table, aes(x = group, y = Size, fill = assembly_status)) +
+  geom_boxplot(outlier.shape = NA) +
+  geom_point(
+    color = "black",
+    position = position_jitter(width = 0.2),
+    size = 1.5,
+    alpha = 0.6
+  ) +
+  stat_summary(
+    aes(group = group),
+    fun = median,
+    geom = "crossbar",
+    width = 0.5,
+    color = "black",
+    fatten = 2
+  ) +
+  stat_compare_means(comparisons = comparisons, method = "wilcox.test", label = "p.format") +
+  scale_fill_manual(values = c("Draft" = "#2BA2A6", "Complete" = "#D72638")) +
+  scale_x_discrete(labels = c(
+    "New sequences: Draft" = "New sequences",
+    "New sequences: Complete" = "New sequences",
+    "Public sequences: Draft" = "Public sequences",
+    "Public sequences: Complete" = "Public sequences"
+  )) +
+  labs(
+    title = "Genome Size Comparison",
+    x = "Genome Source",
+    y = "Genome Size (Mb)",
+    fill = "Assembly Status"
+  ) +
+  theme_minimal() +
+  theme(
+    axis.text.x = element_text(angle = 0, hjust = 0.5),
+    legend.position = "right"
+  )
+
+##Figure 3A
+# Load required libraries
+library(tidyverse)
+
+# === Step 1: Load and filter data ===
+df <- Supplementary_table %>%
+    filter(Toxinotype %in% c("A", "C", "D", "E", "F"))
+
+# === Step 2: Count isolates by plasmid amount and toxinotype ===
+plasmid_distribution <- df %>%
+    count(amount, Toxinotype, name = "Occurrences")
+
+# === Step 3: Define distinct colors for toxinotypes ===
+tox_colors <- c(
+    "A" = "#E41A1C",  # Red
+    "C" = "#377EB8",  # Blue
+    "D" = "#4DAF4A",  # Green
+    "E" = "#984EA3",  # Purple
+    "F" = "#FF7F00"   # Orange
+)
+
+# === Step 4: Create the plot ===
+plot_stacked <- ggplot(plasmid_distribution, aes(x = amount, y = Occurrences, fill = Toxinotype)) +
+    geom_bar(stat = "identity") +  # stacked bars by default
+    scale_fill_manual(values = tox_colors) +
+    scale_x_continuous(breaks = 0:10, expand = expansion(mult = c(0, 0.05))) +
+    labs(
+        x = "Total Number of Plasmids per Isolate",
+        y = "Number of Isolates",
+        fill = "Toxinotype"
+    ) +
+    theme_minimal(base_size = 18) +
+    theme(
+        legend.position = "inside",
+        legend.position.inside = c(0.98, 0.98),
+        legend.justification = c("right", "top"),
+        legend.direction = "vertical",
+        legend.title = element_text(size = 18),
+        legend.text = element_text(size = 18),
+        legend.background = element_rect(fill = "white", color = NA),
+        
+        # Make everything else white
+        panel.background = element_rect(fill = "white", color = NA),
+        plot.background = element_rect(fill = "white", color = NA),
+        panel.grid = element_line(color = "grey90"),
+        
+        # Customize axis fonts
+        axis.title = element_text(size = 16, face = "bold"),
+        axis.text = element_text(size = 16)
+    )
+
+# === Step 5: Show the plot ===
+print(plot_stacked)
+
+##Figure 3B
+library(ggplot2)    # for plotting
+library(ggbreak)    # for broken y-axis
+library(dplyr)      # for summary statistics and data wrangling
+
+
+# New custom order
+ordered_categories <- c("TCP", "PCP", "BCP", "BaCP", "TeCP", "piP404", "phage-like", "small", "unclassified")
+
+# Apply factor levels in this order
+Supplementary_table$Category <- factor(Supplementary_table$Category, levels = ordered_categories)
+
+# Also make sure summary tables use the same order
+summary_stats <- Supplementary_table %>%
+    group_by(Category) %>%
+    summarize(
+        Q2 = quantile(Size_kb, 0.25),
+        Median = median(Size_kb),
+        Q3 = quantile(Size_kb, 0.75)
+    ) %>%
+    arrange(factor(Category, levels = ordered_categories))
+
+highlighted_medians <- summary_stats %>% filter(Category %in% c("BCP", "TeCP"))
+default_medians     <- summary_stats %>% filter(!Category %in% c("BCP", "TeCP"))
+
+# Define colors (unchanged)
+custom_colors <- c(
+    "TCP" = "#469990",
+    "PCP" = "#42d4f4",
+    "BCP" = "#4363d8",
+    "BaCP" = "#e6194B",
+    "TeCP" = "#f032e6",
+    "piP404" = "#fffac8",
+    "phage-like" = "#aaffc3",
+    "small" = "#dcbeff",
+    "unclassified" = "#a9a9a9"
+)
+
+# Plot
+p <- ggplot(Supplementary_table, aes(x = Category, y = Size_kb, fill = Category)) +
+    geom_violin(trim = FALSE, width = 1, scale = "width", color = "black", alpha = 1) +
+    geom_jitter(width = 0.3, color = "black", size = 0.7, alpha = 0.7) +
+    geom_errorbar(
+        data = summary_stats,
+        mapping = aes(x = Category, ymin = Q2, ymax = Q3),
+        width = 0.2,
+        color = "black",
+        linewidth = 1.2,
+        inherit.aes = FALSE
+    ) +
+    geom_crossbar(
+        data = default_medians,
+        mapping = aes(x = Category, y = Median, ymin = Median, ymax = Median),
+        width = 0.5,
+        color = "black",
+        linewidth = 0.9,
+        inherit.aes = FALSE
+    ) +
+    geom_crossbar(
+        data = highlighted_medians,
+        mapping = aes(x = Category, y = Median, ymin = Median, ymax = Median, fill = Category),
+        width = 0.5,
+        color = "black",
+        linewidth = 1.2,
+        inherit.aes = FALSE
+    ) +
+    scale_fill_manual(values = custom_colors) +
+    theme_minimal(base_size = 14) +
+    theme(
+        axis.text.x = element_text(angle = 45, hjust = 1),
+        axis.line.y = element_line(color = "black", linewidth = 0.8),
+        axis.ticks.y = element_line(color = "black"),
+        panel.grid.major.x = element_blank()
+    ) +
+    labs(
+        x = "Plasmid Category",
+        y = "Plasmid Size (kb)"
+    )
+
+# Final plot with axis break
+p + scale_y_break(c(200, 800), scales = 0.5)
+
 
