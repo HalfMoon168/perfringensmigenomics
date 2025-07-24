@@ -5,9 +5,11 @@ clinker -p --dont_set_origin
 igua --clustering-method complete --clustering-distance 0.5
 
 ##ANIclustermap
+##the created newick file was used as input for iTOL
 ANIclustermap -i path/to/plasmids_fna -t 3  -o plasmids_ani --annotation
 
 ##clustal
+##sequence variants defined as deviation from wildtypesequence (V1) were determined manually in the resulting pile of alignments
 clustalo --infile path/toxin_sequences_fasta --threads 2 --outfmt clustal --resno --outfile --pileup  --seqtype DNA
 
 ##GECCO
@@ -20,10 +22,56 @@ panaroo -i -o --clean-mode strict --remove-invalid-genes --core_threshold 0.95 -
 iqtree -s core_gene_alignment_filtered.aln  -m GTR+F+R2 -B 1000 -T 16
 
 ##jackHMMER
+## profile 5 was used in hmmsearch against a concatenated protein list of all 619 genomes
 jackhmmer -A --tblout --chkhmm  --domtblout   input.txt uniprot_trembl.fasta
 
 ##hmmsearch
+## all hits were analyzed using excel. e-value above 0.05 were discarded. 
 hmmsearch -A   --cpu 5 --tblout  --domtblout  profile-5.hmm input.faa
+
+##This is a script to create a toxin presence/absence matrix from an tblastn curated output. trim the output to 
+##two colums. left toxin, right identifier. identifier should be only the genome name without gene locus.  
+
+#!/bin/bash
+
+
+input_file="input.txt"
+output_file="presence_absence_matrix.txt"
+
+awk '
+{
+  strains[$1] = 1
+  proteins[$2] = 1
+  matrix[$1,$2] = 1
+}
+END {
+  printf "\t"
+  for (protein in proteins) {
+    printf "%s\t", protein
+  }
+  print ""
+  
+  for (strain in strains) {
+    printf "%s", strain
+    for (protein in proteins) {
+      if ((strain, protein) in matrix) {
+        printf "\t1"
+      } else {
+        printf "\t-1"
+      }
+    }
+    print ""
+  }
+}
+' "$input_file" > "$output_file"
+
+echo "Presence/absence matrix saved as $output_file."
+
+##tbalstn, makeblastdb were used on the galaxy server as indicated in the acknowledgments
+## resulting files were analyzed using excel, a presence and absence graphic was calculated with the above bash script
+tblastn -evalue 0.001 -outfmt '6 std sallseqid qseq sseq qlen slen salltitles' -seq no -max_target_seqs 10000 -max_hsps '1' qcov_hsp_perc '80.0'
+makeblastdb python /opt/galaxy/shed_tools/toolshed.g2.bx.psu.edu/repos/devteam/ncbi_blast_plus/cbf3f518b668/ncbi_blast_plus/tools/ncbi_blast_plus/check_no_duplicates.py '/data/dnb10/galaxy_db/files/0/2/9/dataset_XX.dat' && cat '/data/dnb10/galaxy_db/files/0/2/9/dataset_XX.dat' | makeblastdb -out '/data/jwd02f/main/072/161/72161875/outputs/dataset_687a35cc-c324-4229-b465-c41fc425d746_files/blastdb' -blastdb_version 4  -hash_index -in - -title 'BLAST Database' -dbtype prot > '/data/jwd02f/main/072/161/72161875/outputs/dataset_687a35cc-c324-4229-b465-c41fc425d746.dat'
+
 
 ##diamond
 pip install numpy
