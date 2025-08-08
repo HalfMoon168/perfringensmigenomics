@@ -1,17 +1,37 @@
 ##This document provides all commands and tools used to generate the data for the manuscript "Genomic investigations in animal enteric disease associated Clostridium perfringens"
 ##published in XXX. 
 
-##The following tools were used on the UBELIX high performance computing of the University of Bern: clinker (v0.0.29), Flye (v.2.9.3-b1797), LJA (v.0.2), bcl2fastq conversion software (v2.20),
-##ANIclustermap (v2.0.0), VIBRANT (v1.2.1), IGUA (v0.1.0), clustal omega (v1.2.4), BUSCO (v5.3.2), SMRT Tools (v.13.0.0.207600), GECCO (v0.9.10), panaroo (v1.4.2), IQ-tree (v2.0.3), diamond (v0.9.13), SPAdes (v.3.14.0) 
+##The following tools were used on the UBELIX high performance computing of the University of Bern: 
+##clinker (v0.0.29), 
+##Flye (v.2.9.3-b1797), 
+##LJA (v.0.2), 
+##bcl2fastq conversion software (v2.20),
+##ANIclustermap (v2.0.0), 
+##VIBRANT (v1.2.1), 
+##IGUA (v0.1.0), 
+##clustal omega (v1.2.4), 
+##BUSCO (v5.3.2), 
+##SMRT Tools (v.13.0.0.207600), 
+##GECCO (v0.9.10), 
+##panaroo (v1.4.2), 
+##IQ-tree (v2.0.3), 
+##diamond (v0.9.13), 
+##SPAdes (v.3.14.0) 
 
-##These tools were used on the Galaxy server (https://usegalaxy.eu/): BLAST+ (v2.14.1) with makeblastdb, tblastn, blastp and blastn; 
+##These tools were used on the Galaxy server (https://usegalaxy.eu/): 
+##BLAST+ (v2.14.1) with makeblastdb, tblastn, blastp and blastn; 
 ##HMMER (v3.3.2) with jackhmmer and hmmsearch. 
 
-##Following tools were used via webbrowser: SignalP (v6.0) (https://services.healthtech.dtu.dk/services/SignalP-6.0/),
-##conserved domain database (https://www.ncbi.nlm.nih.gov/Structure/cdd/wrpsb.cgi), AlphaFold3 server (https://alphafoldserver.com/welcome), 
-##deepTMHMM (v.1.0.42) (https://dtu.biolib.com/DeepTMHMM), HHpred (https://toolkit.tuebingen.mpg.de/tools/hhpred), antiSMASH (v8.0) (https://antismash.secondarymetabolites.org/#!/start),
+##Following tools were used via webbrowser: 
+##SignalP (v6.0) (https://services.healthtech.dtu.dk/services/SignalP-6.0/),
+##conserved domain database (https://www.ncbi.nlm.nih.gov/Structure/cdd/wrpsb.cgi), 
+##AlphaFold3 server (https://alphafoldserver.com/welcome), 
+##deepTMHMM (v.1.0.42) (https://dtu.biolib.com/DeepTMHMM), 
+##HHpred (https://toolkit.tuebingen.mpg.de/tools/hhpred), 
+##antiSMASH (v8.0) (https://antismash.secondarymetabolites.org/#!/start),
 ##RiPPMiner (http://www.nii.ac.in/rippminer.html), 
 
+##Invidiual codes
 ##clinker
 clinker -p --dont_set_origin
 
