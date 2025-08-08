@@ -1,3 +1,9 @@
+##This document provides all commands and tools used to generate the data for the manuscript "Genomic investigations in animal enteric disease associated Clostridium perfringens"
+##published in XXX. The following tools were used on the UBELIX high performance computing of the University of Bern: clinker (v0.0.29),
+##ANIclustermap , IGUA (v0.1.0), clustal (v1.2.4), 
+
+
+
 ##clinker
 clinker -p --dont_set_origin
 
