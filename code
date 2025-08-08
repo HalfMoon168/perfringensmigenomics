@@ -1,7 +1,16 @@
 ##This document provides all commands and tools used to generate the data for the manuscript "Genomic investigations in animal enteric disease associated Clostridium perfringens"
-##published in XXX. The following tools were used on the UBELIX high performance computing of the University of Bern: clinker (v0.0.29),
-##ANIclustermap , IGUA (v0.1.0), clustal (v1.2.4), 
+##published in XXX. 
 
+##The following tools were used on the UBELIX high performance computing of the University of Bern: clinker (v0.0.29), Flye (v.2.9.3-b1797), LJA (v.0.2), bcl2fastq conversion software (v2.20),
+##ANIclustermap (v2.0.0), VIBRANT (v1.2.1), IGUA (v0.1.0), clustal omega (v1.2.4), BUSCO (v5.3.2), SMRT Tools (v.13.0.0.207600), GECCO (v0.9.10), panaroo (v1.4.2), IQ-tree (v2.0.3), diamond (v0.9.13), SPAdes (v.3.14.0) 
+
+##These tools were used on the Galaxy server (https://usegalaxy.eu/): BLAST+ (v2.14.1) with makeblastdb, tblastn, blastp and blastn; 
+##HMMER (v3.3.2) with jackhmmer and hmmsearch. 
+
+##Following tools were used via webbrowser: SignalP (v6.0) (https://services.healthtech.dtu.dk/services/SignalP-6.0/),
+##conserved domain database (https://www.ncbi.nlm.nih.gov/Structure/cdd/wrpsb.cgi), AlphaFold3 server (https://alphafoldserver.com/welcome), 
+##deepTMHMM (v.1.0.42) (https://dtu.biolib.com/DeepTMHMM), HHpred (https://toolkit.tuebingen.mpg.de/tools/hhpred), antiSMASH (v8.0) (https://antismash.secondarymetabolites.org/#!/start),
+##RiPPMiner (http://www.nii.ac.in/rippminer.html), 
 
 
 ##clinker
@@ -11,8 +20,8 @@ clinker -p --dont_set_origin
 igua --clustering-method complete --clustering-distance 0.5
 
 ##ANIclustermap
-##the created newick file was used as input for iTOL
 ANIclustermap -i path/to/plasmids_fna -t 3  -o plasmids_ani --annotation
+##the created newick file was used as input for iTOL
 
 ##clustal
 ##sequence variants defined as deviation from wildtypesequence (V1) were determined manually in the resulting pile of alignments
@@ -24,16 +33,16 @@ gecco run --genome concataned_gbk_file.txt --cds-feature CDS -o
 ##panaroo and iqtree
 eval "$(conda shell.bash hook)"
 conda activate "panaroo"
-panaroo -i -o --clean-mode strict --remove-invalid-genes --core_threshold 0.95 -t 10 -a core
-iqtree -s core_gene_alignment_filtered.aln  -m GTR+F+R2 -B 1000 -T 16
+panaroo -i -o --clean-mode strict --remove-invalid-genes --core_threshold 0.95 -a core
+iqtree -s core_gene_alignment_filtered.aln -m GTR+F+R2 -B 1000
 
 ##jackHMMER
-## profile 5 was used in hmmsearch against a concatenated protein list of all 619 genomes
 jackhmmer -A --tblout --chkhmm  --domtblout   input.txt uniprot_trembl.fasta
 
 ##hmmsearch
-## all hits were analyzed using excel. e-value above 0.05 were discarded. 
+## profile 5 was used in hmmsearch against a concatenated protein list of all 619 genomes
 hmmsearch -A   --cpu 5 --tblout  --domtblout  profile-5.hmm input.faa
+## all hits were analyzed using excel. Hits with e-value >0.05 were discarded. 
 
 ##This is a script to create a toxin presence/absence matrix from an tblastn curated output. trim the output to 
 ##two colums. left toxin, right identifier. identifier should be only the genome name without gene locus.  
@@ -73,7 +82,7 @@ END {
 
 echo "Presence/absence matrix saved as $output_file."
 
-##tbalstn, makeblastdb were used on the galaxy server as indicated in the acknowledgments
+##tblastn, makeblastdb were used on the galaxy server as indicated in the acknowledgments
 ## resulting files were analyzed using excel, a presence and absence graphic was calculated with the above bash script
 tblastn -evalue 0.001 -outfmt '6 std sallseqid qseq sseq qlen slen salltitles' -seq no -max_target_seqs 10000 -max_hsps '1' qcov_hsp_perc '80.0'
 makeblastdb python /opt/galaxy/shed_tools/toolshed.g2.bx.psu.edu/repos/devteam/ncbi_blast_plus/cbf3f518b668/ncbi_blast_plus/tools/ncbi_blast_plus/check_no_duplicates.py '/data/dnb10/galaxy_db/files/0/2/9/dataset_XX.dat' && cat '/data/dnb10/galaxy_db/files/0/2/9/dataset_XX.dat' | makeblastdb -out '/data/jwd02f/main/072/161/72161875/outputs/dataset_687a35cc-c324-4229-b465-c41fc425d746_files/blastdb' -blastdb_version 4  -hash_index -in - -title 'BLAST Database' -dbtype prot > '/data/jwd02f/main/072/161/72161875/outputs/dataset_687a35cc-c324-4229-b465-c41fc425d746.dat'
