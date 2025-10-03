@@ -300,7 +300,7 @@ END {
 echo "Presence/absence matrix saved as $output_file."
 
 ##Figures
-##Figure 1B
+##Figure 1A
 # Load required packages
 library(readr)
 library(dplyr)
@@ -436,131 +436,78 @@ p3 <- ggplot(plot_df, aes(x = NumGenomes, y = NewGenesMean)) +
 final_plot <- p1 + p3 + plot_layout(widths = c(1, 1))
 final_plot
 
-##Figure 1C
-# Load libraries
-library(dplyr)
-library(ggplot2)
+##Figure 3A
+# Load required libraries
+library(tidyverse)
 library(ggpubr)
 
-# Step 1: Process input data
-# Assuming Supplementary_table is already loaded
-Supplementary_table <- Supplementary_table %>%
-  mutate(
-    # Recode assembly status
-    assembly_status = case_when(
-      Level %in% c("Complete", "Chromosome") ~ "Complete",
-      Level %in% c("Contig", "Scaffold") ~ "Draft",
-      TRUE ~ NA_character_
-    ),
-    # Recode source
-    source = case_when(
-      Own == "Yes" ~ "New sequences",
-      Own == "No" ~ "Public sequences",
-      TRUE ~ NA_character_
-    ),
-    # Create combined group label for x-axis
-    group = paste(source, assembly_status, sep = ": ")
+# Step 1: Filter and clean data
+df <- Supplementary_table %>%
+  filter(
+    Toxinotype %in% c("A", "C", "D", "E", "F"),
+    !is.na(amount),
+    amount != "not accessed"
   ) %>%
-  filter(!is.na(assembly_status), !is.na(source), !is.na(Size))
+  mutate(
+    amount = as.numeric(amount)
+  )
 
-# Step 2: Define comparisons
-comparisons <- list(
-  c("New sequences: Draft", "New sequences: Complete"),
-  c("Public sequences: Draft", "Public sequences: Complete"),
-  c("New sequences: Draft", "Public sequences: Draft"),
-  c("New sequences: Complete", "Public sequences: Complete")
+# Step 2: Define distinct colors for each toxinotype
+tox_colors <- c(
+  "A" = "#E41A1C",  # Red
+  "C" = "#377EB8",  # Blue
+  "D" = "#4DAF4A",  # Green
+  "E" = "#984EA3",  # Purple
+  "F" = "#FF7F00"   # Orange
 )
 
-# Step 3: Final plot
-ggplot(Supplementary_table, aes(x = group, y = Size, fill = assembly_status)) +
-  geom_boxplot(outlier.shape = NA) +
-  geom_point(
-    color = "black",
-    position = position_jitter(width = 0.2),
+# Step 3: Define pairwise comparisons (A vs. each other)
+comparisons <- list(
+  c("A", "C"),
+  c("A", "D"),
+  c("A", "E"),
+  c("A", "F")
+)
+
+# Step 4: Create the plot
+ggplot(df, aes(x = Toxinotype, y = amount, fill = Toxinotype)) +
+  geom_boxplot(outlier.shape = NA, alpha = 0.8, width = 0.6) +
+  geom_jitter(
+    position = position_jitter(width = 0.2, height = 0),
     size = 1.5,
-    alpha = 0.6
+    alpha = 0.6,
+    color = "black"
   ) +
   stat_summary(
-    aes(group = group),
     fun = median,
     geom = "crossbar",
     width = 0.5,
     color = "black",
     fatten = 2
   ) +
-  stat_compare_means(comparisons = comparisons, method = "wilcox.test", label = "p.format") +
-  scale_fill_manual(values = c("Draft" = "#2BA2A6", "Complete" = "#D72638")) +
-  scale_x_discrete(labels = c(
-    "New sequences: Draft" = "New sequences",
-    "New sequences: Complete" = "New sequences",
-    "Public sequences: Draft" = "Public sequences",
-    "Public sequences: Complete" = "Public sequences"
-  )) +
-  labs(
-    title = "Genome Size Comparison",
-    x = "Genome Source",
-    y = "Genome Size (Mb)",
-    fill = "Assembly Status"
+  stat_compare_means(
+    comparisons = comparisons,
+    method = "wilcox.test",
+    label = "p.format"
   ) +
-  theme_minimal() +
+  scale_fill_manual(values = tox_colors) +
+  scale_y_continuous(
+    breaks = seq(0, 10, by = 2),  # Tick marks up to 10
+    limits = c(-0.5, 15),            # Plot space up to 16
+    expand = expansion(mult = c(0, 0.05))
+  ) +
+  labs(
+    title = "Plasmid Count per Isolate by Toxinotype",
+    x = "Toxinotype",
+    y = "Number of Plasmids",
+    fill = "Toxinotype"
+  ) +
+  theme_minimal(base_size = 16) +
   theme(
-    axis.text.x = element_text(angle = 0, hjust = 0.5),
-    legend.position = "right"
+    legend.position = "none",
+    axis.title = element_text(face = "bold"),
+    axis.text = element_text(size = 14)
   )
-
-##Figure 3A
-# Load required libraries
-library(tidyverse)
-
-# === Step 1: Load and filter data ===
-df <- Supplementary_table %>%
-    filter(Toxinotype %in% c("A", "C", "D", "E", "F"))
-
-# === Step 2: Count isolates by plasmid amount and toxinotype ===
-plasmid_distribution <- df %>%
-    count(amount, Toxinotype, name = "Occurrences")
-
-# === Step 3: Define distinct colors for toxinotypes ===
-tox_colors <- c(
-    "A" = "#E41A1C",  # Red
-    "C" = "#377EB8",  # Blue
-    "D" = "#4DAF4A",  # Green
-    "E" = "#984EA3",  # Purple
-    "F" = "#FF7F00"   # Orange
-)
-
-# === Step 4: Create the plot ===
-plot_stacked <- ggplot(plasmid_distribution, aes(x = amount, y = Occurrences, fill = Toxinotype)) +
-    geom_bar(stat = "identity") +  # stacked bars by default
-    scale_fill_manual(values = tox_colors) +
-    scale_x_continuous(breaks = 0:10, expand = expansion(mult = c(0, 0.05))) +
-    labs(
-        x = "Total Number of Plasmids per Isolate",
-        y = "Number of Isolates",
-        fill = "Toxinotype"
-    ) +
-    theme_minimal(base_size = 18) +
-    theme(
-        legend.position = "inside",
-        legend.position.inside = c(0.98, 0.98),
-        legend.justification = c("right", "top"),
-        legend.direction = "vertical",
-        legend.title = element_text(size = 18),
-        legend.text = element_text(size = 18),
-        legend.background = element_rect(fill = "white", color = NA),
-        
-        # Make everything else white
-        panel.background = element_rect(fill = "white", color = NA),
-        plot.background = element_rect(fill = "white", color = NA),
-        panel.grid = element_line(color = "grey90"),
-        
-        # Customize axis fonts
-        axis.title = element_text(size = 16, face = "bold"),
-        axis.text = element_text(size = 16)
-    )
-
-# === Step 5: Show the plot ===
-print(plot_stacked)
 
 ##Figure 3B
 library(ggplot2)    # for plotting
